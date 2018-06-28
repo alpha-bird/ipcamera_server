@@ -195,7 +195,12 @@ function startRTSP(callback) {
 						return;
 					}
 					console.log('**************Now playing');
-					pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
+					var params1 = {
+						//mediaPipeline: _pipeline,
+						uri: "rtsp://184.72.239.149/vod/mp4:BigBuckBunny_175k.mov",
+						useEncodedMedia: false // true
+					};
+					pipeline.create('PlayerEndpoint', params1, function(error, _playerEndpoint) {
 						if (error) {
 							console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
 							//return callback(error);
