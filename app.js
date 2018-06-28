@@ -25,7 +25,6 @@ var pipeline = null;
 var viewers = {};
 var kurentoClient = null;
 var playerEndpoint = null;
-var isrtspStarted = false;
 function nextUniqueId() {
 	idCounter++;
 	return idCounter.toString();
@@ -151,60 +150,57 @@ function getKurentoClient(callback) {
 
 /* Start PlayerEndpoint instead */
 function startRTSP(callback) {
-	if( !isrtspStarted ) {
-		isrtspStarted = true
-		console.log('********************function startRTSP(callback) {');
-		if (master !== null) {
-			console.error("Error**************Master is not running ...");
-			return ;
+	console.log('********************function startRTSP(callback) {');
+	if (master !== null) {
+		console.error("Error**************Master is not running ...");
+		return ;
+	}
+
+	master = true;
+
+	getKurentoClient(function(error, kurentoClient) {
+		if (error) {
+			stop(id);
+			console.error('Error**************getKurentoClient(function(error, kurentoClient) {');
+			//return callback(error);
+			return;
 		}
-
-		master = true;
-
-		getKurentoClient(function(error, kurentoClient) {
+		kurentoClient.create('MediaPipeline', function(error, _pipeline) {
 			if (error) {
-				stop(id);
-				console.error('Error**************getKurentoClient(function(error, kurentoClient) {');
+				console.error("Error**************kurentoClient.create('MediaPipeline', function(error, _pipeline) {");
 				//return callback(error);
 				return;
 			}
-			kurentoClient.create('MediaPipeline', function(error, _pipeline) {
+
+			// PlayerEndpoint params
+			var params = {
+				//mediaPipeline: _pipeline,
+				uri: rtsp_uri,
+				useEncodedMedia: false // true
+			};
+
+			pipeline = _pipeline;
+			pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
 				if (error) {
-					console.error("Error**************kurentoClient.create('MediaPipeline', function(error, _pipeline) {");
+					console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
 					//return callback(error);
-					return;
+					return
 				}
-
-				// PlayerEndpoint params
-				var params = {
-					//mediaPipeline: _pipeline,
-					uri: rtsp_uri,
-					useEncodedMedia: false // true
-				};
-
-				pipeline = _pipeline;
-				pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
+				playerEndpoint = _playerEndpoint;
+				console.log('***************Preparing to play');
+				playerEndpoint.play(function(error) {
 					if (error) {
-						console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
+						console.error("Error**************playerEndpoint.play(function(error) {");
 						//return callback(error);
-						return
+						return;
 					}
-					playerEndpoint = _playerEndpoint;
-					console.log('***************Preparing to play');
-					playerEndpoint.play(function(error) {
-						if (error) {
-							console.error("Error**************playerEndpoint.play(function(error) {");
-							//return callback(error);
-							return;
-						}
-						console.log('**************Now playing');
-					});
-
+					console.log('**************Now playing');
 				});
 
 			});
+
 		});
-	}
+	});
 }
 
 function startViewer(id, sdp, ws, callback) {
@@ -348,7 +344,6 @@ function stop(id) {
 		if(pipeline) pipeline.release();
 		pipeline = null;
 		master = null;
-		isrtspStarted = false
 
 		startRTSP(function(error) {
 			console.log('**********************startRTSP(function(error) {');
