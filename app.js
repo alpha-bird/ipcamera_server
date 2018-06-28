@@ -195,24 +195,6 @@ function startRTSP(callback) {
 						return;
 					}
 					console.log('**************Now playing');
-					pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
-						if (error) {
-							console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
-							//return callback(error);
-							return
-						}
-						playerEndpoint = _playerEndpoint;
-						console.log('***************Preparing to play');
-						playerEndpoint.play(function(error) {
-							if (error) {
-								console.error("Error**************playerEndpoint.play(function(error) {");
-								//return callback(error);
-								return;
-							}
-							console.log('**************Now playing');
-						});
-		
-					});
 				});
 
 			});
@@ -362,6 +344,12 @@ function stop(id) {
 		pipeline.release();
 		pipeline = null;
 		master = null;
+		startRTSP(function(error) {
+			console.log('**********************startRTSP(function(error) {');
+			if (error) {
+				return console.error(error);
+			}
+		});
 	}
 	clearCandidatesQueue(id);
 }
