@@ -195,6 +195,24 @@ function startRTSP(callback) {
 						return;
 					}
 					console.log('**************Now playing');
+					pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
+						if (error) {
+							console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
+							//return callback(error);
+							return
+						}
+						playerEndpoint = _playerEndpoint;
+						console.log('***************Preparing to play');
+						playerEndpoint.play(function(error) {
+							if (error) {
+								console.error("Error**************playerEndpoint.play(function(error) {");
+								//return callback(error);
+								return;
+							}
+							console.log('**************Now playing');
+						});
+		
+					});
 				});
 
 			});
@@ -255,50 +273,65 @@ function startViewer(id, sdp, ws, callback) {
             }));
         });
 		
-		webRtcEndpoint.processOffer(sdp, function(error, sdpAnswer) {
-			console.log("**************webRtcEndpoint.processOffer(sdp,");
+		pipeline.create( 'Composite',  function( error, _composite ) {
+			console.log("creating Composite");
 			if (error) {
-				stop(id);
-				console.error("Error**************webRtcEndpoint.processOffer(sdp,");
-				return callback(error);
+				return console.log(error)
 			}
-
-			if (master === null) {
-				stop(id);
-				console.error("Error**************No active streams available. Try again later ...");
-				return callback("No active streams available. Try again later ...");
-			}
-
-			//master.webRtcEndpoint.connect(webRtcEndpoint, function(error) {
-			playerEndpoint.connect(webRtcEndpoint, function(error) {
-				console.log("**************master.webRtcEndpoint.connect(webRtcEndpoint");
+			_composite.createHubPort( function(error, _hubPort) {
+				console.info("Creating hubPort");
 				if (error) {
-					stop(id);
-					console.error("Error**************master.webRtcEndpoint.connect(webRtcEndpoint");
-					return callback(error, getState4Client());
+					return console.log(error)
 				}
-
-				if (master === null) {
-					stop(id);
-					console.error("Error**************No active sender now. Become sender or . Try again later ...");
-					return callback("No active sender now. Become sender or . Try again later ...");
-				}
-
-				/*var viewer = {
-					id : id,
-					ws : ws,
-					webRtcEndpoint : webRtcEndpoint
-				};
-				viewers[viewer.id] = viewer;*/
-
-				return callback(null, sdpAnswer);
+				var hubPort = _hubPort
+				webRtcEndpoint.connect(hubPort)
+				hubPort.connect(webRtcEndpoint)
+				webRtcEndpoint.processOffer(sdp, function(error, sdpAnswer) {
+					console.log("**************webRtcEndpoint.processOffer(sdp,");
+					if (error) {
+						stop(id);
+						console.error("Error**************webRtcEndpoint.processOffer(sdp,");
+						return callback(error);
+					}
+		
+					if (master === null) {
+						stop(id);
+						console.error("Error**************No active streams available. Try again later ...");
+						return callback("No active streams available. Try again later ...");
+					}
+		
+					//master.webRtcEndpoint.connect(webRtcEndpoint, function(error) {
+					playerEndpoint.connect(webRtcEndpoint, function(error) {
+						console.log("**************master.webRtcEndpoint.connect(webRtcEndpoint");
+						if (error) {
+							stop(id);
+							console.error("Error**************master.webRtcEndpoint.connect(webRtcEndpoint");
+							return callback(error, getState4Client());
+						}
+		
+						if (master === null) {
+							stop(id);
+							console.error("Error**************No active sender now. Become sender or . Try again later ...");
+							return callback("No active sender now. Become sender or . Try again later ...");
+						}
+		
+						/*var viewer = {
+							id : id,
+							ws : ws,
+							webRtcEndpoint : webRtcEndpoint
+						};
+						viewers[viewer.id] = viewer;*/
+		
+						return callback(null, sdpAnswer);
+					});
+				});
+				webRtcEndpoint.gatherCandidates(function(error) {
+					if (error) {
+						stop(sessionId);
+						return callback(error);
+					}
+				});
 			});
-		});
-		webRtcEndpoint.gatherCandidates(function(error) {
-			if (error) {
-				stop(sessionId);
-				return callback(error);
-			}
 		});
 	});
 }
