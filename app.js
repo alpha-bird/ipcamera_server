@@ -25,6 +25,8 @@ var pipeline = null;
 var viewers = {};
 var kurentoClient = null;
 var playerEndpoint = null;
+var composite = null;
+var mediaPipeline = null;
 function nextUniqueId() {
 	idCounter++;
 	return idCounter.toString();
@@ -148,6 +150,79 @@ function getKurentoClient(callback) {
 	});
 }
 
+// Retrieve or create mediaPipeline
+function getMediaPipeline( callback ) {
+    if ( mediaPipeline !== null ) {
+        console.log("MediaPipeline already created");
+        return callback( null, mediaPipeline );
+    }
+    getKurentoClient(function(error, _kurentoClient) {
+        if (error) {
+            return callback(error);
+        }
+        _kurentoClient.create( 'MediaPipeline', function( error, _pipeline ) {
+            console.log("creating MediaPipeline");
+            if (error) {
+                return callback(error);
+            }
+            mediaPipeline = _pipeline;
+            callback(null, mediaPipeline);
+        });
+    });
+}
+
+// Retrieve or create composite hub
+function getComposite( callback ) {
+    if ( composite !== null ) {
+        console.log("Composer already created");
+        return callback( null, composite, mediaPipeline );
+    }
+    getMediaPipeline( function( error, _pipeline) {
+        if (error) {
+            return callback(error);
+        }
+        _pipeline.create( 'Composite',  function( error, _composite ) {
+            console.log("creating Composite");
+            if (error) {
+                return callback(error);
+            }
+            composite = _composite;
+            callback( null, composite );
+        });
+    });
+}
+
+function createHubPort(callback) {
+    getComposite(function(error, _composite) {
+        if (error) {
+            return callback(error);
+        }
+        _composite.createHubPort( function(error, _hubPort) {
+            console.info("Creating hubPort");
+            if (error) {
+                return callback(error);
+            }
+            callback( null, _hubPort );
+        });
+    });
+}
+
+// Create a webRTC end point
+function createWebRtcEndPoint (callback) {
+    getMediaPipeline( function( error, _pipeline) {
+        if (error) {
+            return callback(error);
+        }
+        _pipeline.create('WebRtcEndpoint',  function( error, _webRtcEndpoint ) {
+            console.info("Creating createWebRtcEndpoint");
+            if (error) {
+                return callback(error);
+            }
+            callback( null, _webRtcEndpoint );
+        });
+    });
+}
+
 /* Start PlayerEndpoint instead */
 function startRTSP(callback) {
 	console.log('********************function startRTSP(callback) {');
@@ -232,7 +307,37 @@ function startViewer(id, sdp, ws, callback) {
 		console.error("Error**************You are already viewing in this session. Use a different browser to add additional viewers.");
 		return callback("You are already viewing in this session. Use a different browser to add additional viewers.")
 	}
-
+	viewers[id] = {
+        id: id,
+        webRtcEndpoint : null,
+        hubPort : null
+    }
+	createWebRtcEndPoint(function (error, _webRtcEndpoint) {
+        if (error) {
+            console.log("Error creating WebRtcEndPoint " + error);
+            return callback(error);
+        }
+        viewers[id].webRtcEndpoint = _webRtcEndpoint
+        createHubPort(function (error, _hubPort) {
+            if (error) {
+                stop(id);
+                console.log("Error creating HubPort " + error);
+                return callback(error);
+            }
+            viewers[id].hubPort = _hubPort;
+            viewers[id].webRtcEndpoint.connect(viewers[id].hubPort);
+            viewers[id].hubPort.connect(viewers[id].webRtcEndpoint);
+            viewers[id].webRtcEndpoint.processOffer(sdp, function(error, sdpAnswer) {
+                if (error) {
+                    stop(id);
+                    console.log("Error processing offer " + error);
+                    return callback(error);
+                }
+                callback( null, sdpAnswer);
+            });
+        });
+    });
+/*
 	pipeline.create('WebRtcEndpoint', function(error, webRtcEndpoint) {
 		console.log("**************pipeline.create('WebRtcEndpoint',");
 		if (error) {
@@ -301,14 +406,14 @@ function startViewer(id, sdp, ws, callback) {
 					console.error("Error**************No active sender now. Become sender or . Try again later ...");
 					return callback("No active sender now. Become sender or . Try again later ...");
 				}
-
+*/
 				/*var viewer = {
 					id : id,
 					ws : ws,
 					webRtcEndpoint : webRtcEndpoint
 				};
 				viewers[viewer.id] = viewer;*/
-
+/*
 				return callback(null, sdpAnswer);
 			});
 		});
@@ -318,7 +423,7 @@ function startViewer(id, sdp, ws, callback) {
 				return callback(error);
 			}
 		});
-	});
+	});*/
 }
 
 function clearCandidatesQueue(sessionId) {
