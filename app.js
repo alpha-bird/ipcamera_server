@@ -6,6 +6,7 @@ var url = require('url');
 var wsm = require('ws');
 var fs    = require('fs');
 var https = require('https');
+var http = require('http');
 
 app.set('port', process.env.PORT || 8080);
 
@@ -46,7 +47,7 @@ var options =
 	cert: fs.readFileSync('keys/server.crt')
 };
 
-var server = https.createServer(options, app).listen(port, function() {
+var server = http.createServer( app ).listen(port, function() {
     console.log('Kurento Media Server started');
     //console.log('Open ' + url.format(asUrl) + ' with a WebRTC capable browser');
 });
