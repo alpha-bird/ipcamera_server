@@ -1,5 +1,6 @@
 var kurento = require('kurento-client');
 var express = require('express');
+var router = express.Router();
 var app = express();
 var path = require('path');
 var url = require('url');
@@ -14,7 +15,8 @@ app.set('port', process.env.PORT || 8080);
  * Definition of constants
  */
 
-const ws_uri = "ws://localhost:8888/kurento", rtsp_uri = "rtsp://xtorr.wellchecked.net:554/live2.sdp";
+const ws_uri = "ws://54.196.144.251:8888/kurento";
+const rtsp_uri = "rtsp://xtorr.wellchecked.net:554/live2.sdp";
 /*
  * Definition of global variables.
  */
@@ -26,6 +28,11 @@ var pipeline = null;
 var viewers = {};
 var kurentoClient = null;
 var playerEndpoint = null;
+
+var streamNames = [];
+var activePipelines = {};
+var activePlayerendpoints = {};
+
 function nextUniqueId() {
 	idCounter++;
 	return idCounter.toString();
@@ -35,11 +42,6 @@ function nextUniqueId() {
  */
 
 var port = app.get('port');
-/*
-var server = app.listen(port, function() {
-	console.log('Express server started ');
-	console.log('Connect to http://<host_name>:' + port + '/');
-});*/
 
 var options =
 {
@@ -56,15 +58,22 @@ var WebSocketServer = wsm.Server, wss = new WebSocketServer({
 	server : server,
 	path : '/one2many'
 });
-
+/*
+var streamName
 // Master Stream hasn't been set
-startRTSP(function(error) {
+startRTSP(streamName, function(error) {
 	console.log('**********************startRTSP(function(error) {');
 	if (error) {
 		return console.error(error);
 	}
 });
-
+*/
+function isStreamExisted(streamName) {
+	for(var i = 0; i < streamNames.length; i ++ ) {
+		if( streamNames[i] === streamName ) return true
+	}
+	return false
+}
 /*
  * Management of WebSocket messages
  */
@@ -89,40 +98,57 @@ wss.on('connection', function(ws) {
 		console.log('*************************Connection ' + sessionId + ' received message ', message);
 
 		switch (message.id) {
-
-		case 'viewer':
-
-			startViewer(sessionId, message.sdpOffer, ws, function(error, sdpAnswer) {
-				if (error) {
-					return ws.send(JSON.stringify({
-						id : 'viewerResponse',
-						response : 'rejected',
-						message : error
+			case 'initialize':
+				if( isStreamExisted(message.streamName) ) {
+					ws.send(JSON.stringify({
+						id : 'initializeResponse',
+						response : 'already playing'
 					}));
 				}
+				else {
+					startRTSP(message.streamName, (err) => {
+						if(err) {
+							return console.log('Stopped RTSP with errors', err)
+						}
+						ws.send(JSON.stringify({
+							id : 'initializeResponse',
+							response : 'ready'
+						}));
+					})
+				}
+				break;
+			case 'viewer':
+				startViewer(sessionId, message.sdpOffer, message.streamName, ws, function(error, sdpAnswer) {
+					if (error) {
+						return ws.send(JSON.stringify({
+							id : 'viewerResponse',
+							response : 'rejected',
+							message : error
+						}));
+					}
 
+					ws.send(JSON.stringify({
+						id : 'viewerResponse',
+						response : 'accepted',
+						sdpAnswer : sdpAnswer
+					}));
+				});
+				break;
+
+			case 'stop':
+				stop(sessionId);
+				break;
+				
+			case 'onIceCandidate':
+				onIceCandidate(sessionId, message.candidate);
+				break;
+
+			default:
 				ws.send(JSON.stringify({
-					id : 'viewerResponse',
-					response : 'accepted',
-					sdpAnswer : sdpAnswer
+					id : 'error',
+					message : 'Invalid message ' + message
 				}));
-			});
-			break;
-
-		case 'stop':
-			stop(sessionId);
-			break;
-			
-		case 'onIceCandidate':
-            onIceCandidate(sessionId, message.candidate);
-            break;
-
-		default:
-			ws.send(JSON.stringify({
-				id : 'error',
-				message : 'Invalid message ' + message
-			}));
-			break;
+				break;
 		}
 	});
 });
@@ -150,52 +176,48 @@ function getKurentoClient(callback) {
 }
 
 /* Start PlayerEndpoint instead */
-function startRTSP(callback) {
-	console.log('********************function startRTSP(callback) {');
-	if (master !== null) {
-		console.error("Error**************Master is not running ...");
-		return ;
-	}
-
-	master = true;
+function startRTSP(streamName, callback) {
+	console.log('Starting RTSP ......');
 
 	getKurentoClient(function(error, kurentoClient) {
 		if (error) {
 			stop(id);
-			console.error('Error**************getKurentoClient(function(error, kurentoClient) {');
-			//return callback(error);
-			return;
+			return console.error('Error occured in getKurentoClient(function(error, kurentoClient)', error);
 		}
 		kurentoClient.create('MediaPipeline', function(error, _pipeline) {
 			if (error) {
-				console.error("Error**************kurentoClient.create('MediaPipeline', function(error, _pipeline) {");
-				//return callback(error);
-				return;
+				return console.error("Error occured in kurentoClient.create('MediaPipeline', function(error, _pipeline)", error);
 			}
 
 			// PlayerEndpoint params
 			var params = {
 				//mediaPipeline: _pipeline,
-				uri: rtsp_uri,
+				uri: streamName,
 				useEncodedMedia: false // true
 			};
 
-			pipeline = _pipeline;
-			pipeline.create('PlayerEndpoint', params, function(error, _playerEndpoint) {
+			//pipeline = _pipeline;
+			activePipelines[streamName] = _pipeline
+			activePipelines[streamName].create('PlayerEndpoint', params, function(error, _playerEndpoint) {
 				if (error) {
 					console.error("Error**************pipeline.create('PlayerEndpoint', params, function(error, PlayerEndpoint) {");
 					//return callback(error);
 					return
 				}
-				playerEndpoint = _playerEndpoint;
-				console.log('***************Preparing to play');
-				playerEndpoint.play(function(error) {
+				//playerEndpoint = _playerEndpoint;
+				activePlayerendpoints[streamName] = _playerEndpoint
+
+				console.log(`Preparing ${streamName} to play .... `);
+				
+				activePlayerendpoints[streamName].play(function(error) {
 					if (error) {
 						console.error("Error**************playerEndpoint.play(function(error) {");
 						//return callback(error);
 						return;
 					}
-					console.log('**************Now playing');
+					streamNames.push(streamName)
+					console.log('Playing ... ');
+					return callback(null)
 				});
 
 			});
@@ -204,31 +226,32 @@ function startRTSP(callback) {
 	});
 }
 
-function startViewer(id, sdp, ws, callback) {
+function startViewer(id, sdp, streamName, ws, callback) {
 	console.log('***************startViewer(id, sdp, ws, callback) {');
+	/*
 	if (master === null || master.webRtcEndpoint === null) {
 		console.error("Error**************No active streams available. Try again later ...");
 		return callback("No active streams available. Try again later ...");
 	}
-
+*/
 	if (viewers[id]) {
 		console.error("Error**************You are already viewing in this session. Use a different browser to add additional viewers.");
 		return callback("You are already viewing in this session. Use a different browser to add additional viewers.")
 	}
-
-	pipeline.create('WebRtcEndpoint', function(error, webRtcEndpoint) {
+	
+	activePipelines[streamName].create('WebRtcEndpoint', function(error, webRtcEndpoint) {
 		console.log("**************pipeline.create('WebRtcEndpoint',");
 		if (error) {
 			console.error("Error**************pipeline.create('WebRtcEndpoint.");
 			return callback(error);
 		}
-
+/*
 		if (master === null) {
 			stop(id);
 			console.error("Error**************No active streams available. Try again later ...");
 			return callback("No active streams available. Try again later ...");
 		}
-		
+*/		
 		
 		var viewer = {
 			id : id,
@@ -237,8 +260,7 @@ function startViewer(id, sdp, ws, callback) {
 		};
 		viewers[viewer.id] = viewer;
 
-		master = {webRtcEndpoint: webRtcEndpoint};
-		
+		//master = {webRtcEndpoint: webRtcEndpoint};
 		
 		if (candidatesQueue[id]) {
 			while(candidatesQueue[id].length) {
@@ -263,27 +285,27 @@ function startViewer(id, sdp, ws, callback) {
 				console.error("Error**************webRtcEndpoint.processOffer(sdp,");
 				return callback(error);
 			}
-
+			/*
 			if (master === null) {
 				stop(id);
 				console.error("Error**************No active streams available. Try again later ...");
 				return callback("No active streams available. Try again later ...");
-			}
+			}*/
 
 			//master.webRtcEndpoint.connect(webRtcEndpoint, function(error) {
-			playerEndpoint.connect(webRtcEndpoint, function(error) {
+			activePlayerendpoints[streamName].connect(webRtcEndpoint, function(error) {
 				console.log("**************master.webRtcEndpoint.connect(webRtcEndpoint");
 				if (error) {
 					stop(id);
 					console.error("Error**************master.webRtcEndpoint.connect(webRtcEndpoint");
 					return callback(error, getState4Client());
 				}
-
+				/*
 				if (master === null) {
 					stop(id);
 					console.error("Error**************No active sender now. Become sender or . Try again later ...");
 					return callback("No active sender now. Become sender or . Try again later ...");
-				}
+				}*/
 
 				/*var viewer = {
 					id : id,
@@ -341,7 +363,7 @@ function stop(id) {
 		if (viewer.webRtcEndpoint)
 			viewer.webRtcEndpoint.release();
 		delete viewers[id];
-
+/*
 		if(pipeline) pipeline.release();
 		pipeline = null;
 		master = null;
@@ -351,9 +373,16 @@ function stop(id) {
 			if (error) {
 				return console.error(error);
 			}
-		});
+		});*/
 	}
 	clearCandidatesQueue(id);
 }
 
 app.use(express.static(path.join(__dirname, 'static')));
+app.use(router);
+
+router.get('/embed_player', (req, res, next) => {
+	var streamName = req.query.streamName
+	var method = req.query.method
+	res.send(`<video src="http://clips.vorwaerts-gmbh.de/VfE_html5.mp4" width = "100%" height="100%" controls></video>`)
+})
