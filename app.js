@@ -15,7 +15,7 @@ app.set('port', process.env.PORT || 8080);
  * Definition of constants
  */
 
-const ws_uri = "ws://54.196.144.251:8888/kurento", rtsp_uri = "rtsp://xtorr.wellchecked.net:554/live2.sdp";
+const ws_uri = "ws://localhost:8888/kurento", rtsp_uri = "rtsp://xtorr.wellchecked.net:554/live2.sdp";
 /*
  * Definition of global variables.
  */
